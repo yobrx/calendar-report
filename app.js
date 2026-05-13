@@ -130,9 +130,12 @@ $('sign-in-btn').addEventListener('click', () => {
 });
 
 $('reset-config-btn').addEventListener('click', () => {
-  ['gcal_client_id','gcal_calendar_id','gcal_color_map','gcal_api_colors','gcal_oof_label']
-    .forEach(k => store.rm(k));
-  window.location.reload();
+  if (accessToken) {
+    showScreen('config');
+    loadColorConfig();
+  } else {
+    showScreen('setup');
+  }
 });
 
 $('save-color-map-btn').addEventListener('click', () => {
