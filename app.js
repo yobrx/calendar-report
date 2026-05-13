@@ -90,16 +90,21 @@ function checkReady() {
   if (!gapiInited || !gisInited) return;
   if (!getClientId()) {
     showScreen('setup');
-  } else {
-    $('sign-in-btn').disabled = false;
-    showScreen('auth');
+    return;
   }
+  // Tentative de reconnexion silencieuse (sans prompt)
+  showScreen('auth');
+  tokenClient.requestAccessToken({ prompt: '' });
 }
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
 function handleTokenResponse(resp) {
-  if (resp.error) { console.error('Auth error:', resp); return; }
+  if (resp.error) {
+    // Reconnexion silencieuse impossible → affiche le bouton de connexion manuelle
+    $('sign-in-btn').disabled = false;
+    return;
+  }
   accessToken = resp.access_token;
   $('user-email').textContent = getCalendarId();
   if (!hasColorMap()) {
@@ -121,7 +126,7 @@ $('save-setup-btn').addEventListener('click', () => {
 });
 
 $('sign-in-btn').addEventListener('click', () => {
-  tokenClient.requestAccessToken({ prompt: 'consent' });
+  tokenClient.requestAccessToken({ prompt: 'select_account' });
 });
 
 $('reset-config-btn').addEventListener('click', () => {
