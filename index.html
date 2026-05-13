@@ -83,10 +83,14 @@
       <div class="card config-section">
         <h3 class="section-title">Calendrier</h3>
         <label class="field-label" for="config-calendar-input">Identifiant du calendrier</label>
-        <input type="text" id="config-calendar-input"
+        <input type="text" id="config-calendar-input" list="calendar-list"
                placeholder="primary  ou  votre@email.com"
                autocomplete="off" spellcheck="false">
-        <p class="field-hint">Utilisez <code>primary</code> pour votre calendrier principal.</p>
+        <datalist id="calendar-list"></datalist>
+        <p class="field-hint">Sélectionnez dans la liste ou saisissez manuellement. Utilisez <code>primary</code> pour votre calendrier principal.</p>
+        <label class="field-label" for="config-weeks-input">Nombre de semaines complètes</label>
+        <input type="number" id="config-weeks-input" min="1" max="52" value="9">
+        <p class="field-hint">La semaine en cours (incomplète) est toujours exclue.</p>
       </div>
 
       <!-- Absences OOF -->

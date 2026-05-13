@@ -77,7 +77,8 @@ body {
   color: var(--muted);
   margin-bottom: 6px;
 }
-input[type="text"] {
+input[type="text"],
+input[type="number"] {
   width: 100%;
   padding: 9px 13px;
   border: 1px solid var(--border);
@@ -88,7 +89,9 @@ input[type="text"] {
   background: #fff;
   margin-bottom: 8px;
 }
-input[type="text"]:focus {
+input[type="number"] { width: 90px; }
+input[type="text"]:focus,
+input[type="number"]:focus {
   outline: none;
   border-color: var(--blue);
   box-shadow: 0 0 0 3px rgba(66,133,244,.15);
@@ -370,10 +373,11 @@ input[type="text"]:focus {
 }
 .detail-row:last-child { border-bottom: none; }
 .detail-row:hover { background: #f3f4f6; }
-.detail-date { font-family: monospace; color: var(--muted); font-size: 11.5px; }
+.detail-date { font-family: monospace; color: var(--muted); font-size: 11.5px; display: flex; align-items: center; }
 .detail-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .detail-title em { color: var(--muted); font-style: normal; }
 .detail-dur { text-align: right; color: var(--muted); white-space: nowrap; font-size: 12px; }
+.ev-count { font-size: 11px; font-weight: 700; color: var(--blue); background: rgba(66,133,244,.1); border-radius: 4px; padding: 1px 5px; }
 
 /* ── Messages ────────────────────────────────────────────────────────────── */
 .msg { text-align: center; padding: 70px 0; color: var(--muted); font-size: 14px; }

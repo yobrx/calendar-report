@@ -1,8 +1,8 @@
 // ── Constantes ────────────────────────────────────────────────────────────────
 
-const SCOPES        = 'https://www.googleapis.com/auth/calendar.readonly';
-const DAYS_BACK     = 61;
-const WORKING_HOURS = 7;
+const SCOPES         = 'https://www.googleapis.com/auth/calendar.readonly';
+const DEFAULT_WEEKS  = 9;
+const WORKING_HOURS  = 7;
 
 // Mapping par défaut (pré-remplit la config à la première ouverture)
 const DEFAULT_COLOR_MAP = {
@@ -31,6 +31,7 @@ const getClientId   = () => store.get('gcal_client_id')   || '';
 const getCalendarId = () => store.get('gcal_calendar_id') || 'primary';
 const getApiColors  = () => store.getJSON('gcal_api_colors') || {};
 const getOofLabel   = () => store.get('gcal_oof_label') ?? DEFAULT_OOF_LABEL;
+const getWeeksCount = () => parseInt(store.get('gcal_weeks') || DEFAULT_WEEKS, 10) || DEFAULT_WEEKS;
 const hasColorMap   = () => store.get('gcal_color_map') !== null;
 const getColorMap   = () => {
   const m = store.getJSON('gcal_color_map');
@@ -134,6 +135,9 @@ $('save-color-map-btn').addEventListener('click', () => {
   store.set('gcal_calendar_id', calId);
   $('user-email').textContent = calId;
 
+  const weeks = parseInt($('config-weeks-input').value, 10);
+  store.set('gcal_weeks', isNaN(weeks) || weeks < 1 ? DEFAULT_WEEKS : weeks);
+
   const map = {};
   document.querySelectorAll('.color-row[data-cid]').forEach(row => {
     const cid      = row.dataset.cid;
@@ -173,21 +177,29 @@ async function loadColorConfig() {
   $('config-loading').classList.remove('hidden');
   $('config-form').classList.add('hidden');
   $('config-calendar-input').value = getCalendarId();
-  $('oof-label-input').value = getOofLabel();
+  $('config-weeks-input').value    = getWeeksCount();
+  $('oof-label-input').value       = getOofLabel();
   $('back-to-report-btn').classList.toggle('hidden', !lastReport);
 
   try {
-    const [colorsRes, eventsRes] = await Promise.all([
+    const { from, to } = completeWeeksBounds(getWeeksCount());
+    const [colorsRes, eventsRes, calListRes] = await Promise.all([
       gapi.client.calendar.colors.get(),
       gapi.client.calendar.events.list({
         calendarId:   getCalendarId(),
-        timeMin:      new Date(Date.now() - DAYS_BACK * 86_400_000).toISOString(),
-        timeMax:      new Date().toISOString(),
+        timeMin:      from.toISOString(),
+        timeMax:      to.toISOString(),
         singleEvents: true,
         maxResults:   2500,
         fields:       'items(colorId)',
       }),
+      gapi.client.calendar.calendarList.list({ fields: 'items(id,summary)' }),
     ]);
+
+    const datalist = $('calendar-list');
+    datalist.innerHTML = (calListRes.result.items || [])
+      .map(c => `<option value="${esc(c.id)}">${esc(c.summary)}</option>`)
+      .join('');
 
     const apiColors = colorsRes.result.event || {};
     store.setJSON('gcal_api_colors', apiColors);
@@ -237,6 +249,19 @@ function renderColorConfig(apiColors, usage) {
   $('color-rows-container').innerHTML = rows;
 }
 
+// ── Calcul de la plage "N semaines complètes" ─────────────────────────────────
+
+function completeWeeksBounds(n) {
+  const now = new Date();
+  const dow = now.getDay() || 7;           // 1=lun … 7=dim
+  const to  = new Date(now);
+  to.setDate(now.getDate() - (dow - 1));   // lundi de la semaine en cours (exclus)
+  to.setHours(0, 0, 0, 0);
+  const from = new Date(to);
+  from.setDate(to.getDate() - n * 7);
+  return { from, to };
+}
+
 // ── Fetch événements ──────────────────────────────────────────────────────────
 
 async function fetchAllEvents(calendarId, timeMin, timeMax) {
@@ -247,6 +272,7 @@ async function fetchAllEvents(calendarId, timeMin, timeMax) {
       calendarId, singleEvents: true, orderBy: 'startTime', maxResults: 250,
       timeMin: timeMin.toISOString(),
       timeMax: timeMax.toISOString(),
+      eventTypes: ['default', 'outOfOffice'],
       pageToken,
     });
     events.push(...(res.result.items || []));
@@ -350,7 +376,7 @@ function buildReport(events, from, to) {
     });
   }
 
-  return new Map([...weeks.entries()].sort((a, b) => a[0] - b[0]));
+  return new Map([...weeks.entries()].sort((a, b) => b[0] - a[0]));
 }
 
 // ── Rendu ─────────────────────────────────────────────────────────────────────
@@ -419,20 +445,29 @@ function renderWeeks(data) {
       const col = colorForType(typeName);
       const key = `${sortKey}_${typeName.replace(/\W+/g,'_')}`;
 
-      const evRows = events
-        .slice().sort((a, b) => new Date(a.date) - new Date(b.date))
-        .map(e => {
-          const d   = new Date(e.date);
-          const fmt = `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`;
-          const title = e.isOof
-            ? `<em>${esc(e.summary)}</em>`
-            : esc(e.summary);
-          return `<div class="detail-row">
-            <span class="detail-date">${fmt}</span>
-            <span class="detail-title">${title}</span>
-            <span class="detail-dur">${formatHours(e.hours)}</span>
-          </div>`;
-        }).join('');
+      // Regroupe les événements identiques (même titre)
+      const grouped = new Map();
+      for (const e of events.slice().sort((a, b) => new Date(a.date) - new Date(b.date))) {
+        if (!grouped.has(e.summary)) {
+          grouped.set(e.summary, { ...e, count: 1 });
+        } else {
+          const g = grouped.get(e.summary);
+          g.hours += e.hours;
+          g.count++;
+        }
+      }
+
+      const evRows = [...grouped.values()].map(e => {
+        const d   = new Date(e.date);
+        const fmt = `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`;
+        const dateCell = e.count > 1 ? `<span class="ev-count">×${e.count}</span>` : fmt;
+        const title    = e.isOof ? `<em>${esc(e.summary)}</em>` : esc(e.summary);
+        return `<div class="detail-row">
+          <span class="detail-date">${dateCell}</span>
+          <span class="detail-title">${title}</span>
+          <span class="detail-dur">${formatHours(e.hours)}</span>
+        </div>`;
+      }).join('');
 
       return `<div class="bar-group">
         <div class="bar-row">
@@ -518,10 +553,7 @@ async function loadReport() {
   container.innerHTML = '';
 
   try {
-    const to   = new Date();
-    const from = new Date(to);
-    from.setDate(to.getDate() - DAYS_BACK);
-    from.setHours(0, 0, 0, 0);
+    const { from, to } = completeWeeksBounds(getWeeksCount());
 
     const events = await fetchAllEvents(getCalendarId(), from, to);
     const data   = buildReport(events, from, to);
