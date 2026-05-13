@@ -252,13 +252,15 @@ function renderColorConfig(apiColors, usage) {
 // ── Calcul de la plage "N semaines complètes" ─────────────────────────────────
 
 function completeWeeksBounds(n) {
-  const now = new Date();
-  const dow = now.getDay() || 7;           // 1=lun … 7=dim
-  const to  = new Date(now);
-  to.setDate(now.getDate() - (dow - 1));   // lundi de la semaine en cours (exclus)
-  to.setHours(0, 0, 0, 0);
-  const from = new Date(to);
-  from.setDate(to.getDate() - n * 7);
+  const now     = new Date();
+  const dow     = now.getDay() || 7;       // 1=lun … 7=dim
+  const thisMon = new Date(now);
+  thisMon.setDate(now.getDate() - (dow - 1));
+  thisMon.setHours(0, 0, 0, 0);
+  const from = new Date(thisMon);
+  from.setDate(thisMon.getDate() - n * 7);
+  const to = new Date(thisMon);
+  to.setDate(thisMon.getDate() + 7);      // lundi suivant → couvre toute la semaine en cours
   return { from, to };
 }
 
