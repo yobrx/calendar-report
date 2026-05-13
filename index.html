@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rapport de temps — Google Calendar</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ── Setup ──────────────────────────────────────────────────────────────── -->
+<div id="setup-screen" class="screen hidden">
+  <div class="center-wrap">
+    <div class="card setup-card">
+      <div class="setup-emoji">⚙️</div>
+      <h2>Configuration</h2>
+      <p>Entrez votre <strong>Google OAuth 2.0 Client ID</strong>.<br>
+         Le calendrier et les libellés seront définis à l'étape suivante.</p>
+      <label class="field-label" for="client-id-input">Client ID OAuth</label>
+      <input type="text" id="client-id-input"
+             placeholder="xxxxxxxxxxxx.apps.googleusercontent.com"
+             autocomplete="off" spellcheck="false">
+      <button id="save-setup-btn" class="btn btn-primary btn-full">Enregistrer et continuer</button>
+      <details class="help">
+        <summary>Comment obtenir un Client ID ?</summary>
+        <ol>
+          <li>Ouvrez <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">Google Cloud Console</a></li>
+          <li>Créez un projet puis activez <strong>l'API Google Calendar</strong></li>
+          <li>Identifiants → Créer → ID client OAuth 2.0 → <strong>Application Web</strong></li>
+          <li>Origines JS autorisées : ajoutez <code>https://votre-user.github.io</code></li>
+          <li>Copiez le Client ID et collez-le ci-dessus</li>
+        </ol>
+      </details>
+    </div>
+  </div>
+</div>
+
+<!-- ── Auth ──────────────────────────────────────────────────────────────── -->
+<div id="auth-screen" class="screen hidden">
+  <div class="center-wrap">
+    <div class="auth-hero">
+      <div class="app-icon">📅</div>
+      <h1>Rapport de temps</h1>
+      <p class="subtitle">Analyse de votre calendrier Google par type d'événement,<br>semaine par semaine sur les 2 derniers mois.</p>
+      <button id="sign-in-btn" class="btn btn-google" disabled>
+        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+          <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.716v2.259h2.908C16.658 14.148 17.64 11.84 17.64 9.2z"/>
+          <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/>
+          <path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"/>
+          <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"/>
+        </svg>
+        Se connecter avec Google
+      </button>
+      <button id="reset-config-btn" class="btn btn-link">Modifier la configuration</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Config ─────────────────────────────────────────────────────────────── -->
+<div id="config-screen" class="screen hidden">
+  <header class="topbar">
+    <div class="topbar-left">
+      <span class="topbar-icon">🎨</span>
+      <div>
+        <h1 class="topbar-title">Configuration</h1>
+        <span class="topbar-sub">Calendrier, libellés et options</span>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <button id="back-to-report-btn" class="btn btn-secondary hidden">← Retour au rapport</button>
+    </div>
+  </header>
+
+  <main id="config-main">
+    <div id="config-loading" class="loading">
+      <div class="spinner"></div>
+      <span>Chargement des couleurs du calendrier…</span>
+    </div>
+
+    <div id="config-form" class="hidden">
+
+      <!-- Calendrier -->
+      <div class="card config-section">
+        <h3 class="section-title">Calendrier</h3>
+        <label class="field-label" for="config-calendar-input">Identifiant du calendrier</label>
+        <input type="text" id="config-calendar-input"
+               placeholder="primary  ou  votre@email.com"
+               autocomplete="off" spellcheck="false">
+        <p class="field-hint">Utilisez <code>primary</code> pour votre calendrier principal.</p>
+      </div>
+
+      <!-- Absences OOF -->
+      <div class="card config-section">
+        <h3 class="section-title">Absences (outOfOffice)</h3>
+        <p class="section-desc">
+          Chaque jour ouvré (lun–ven) marqué comme absence complète sera compté comme
+          <strong>7h</strong> dans le libellé ci-dessous. Laissez vide pour ignorer.
+        </p>
+        <label class="field-label" for="oof-label-input">Libellé des absences</label>
+        <input type="text" id="oof-label-input"
+               placeholder="Ex : Congés, Formation, Autre…"
+               autocomplete="off" spellcheck="false">
+      </div>
+
+      <!-- Couleurs → Libellés -->
+      <div class="card config-section">
+        <h3 class="section-title">Couleurs → Libellés</h3>
+        <p class="section-desc">
+          Couleurs récupérées depuis l'API Google Calendar, triées par nombre d'utilisations
+          sur les 2 derniers mois. Saisissez librement le libellé de chaque couleur.
+          Cochez <strong>Exclure</strong> pour ne pas comptabiliser ce libellé dans le rapport.
+          Laissez le libellé vide pour ignorer entièrement cette couleur.
+        </p>
+        <div id="color-rows-container"></div>
+      </div>
+
+      <div class="config-actions">
+        <button id="save-color-map-btn" class="btn btn-primary">Enregistrer</button>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- ── Rapport ─────────────────────────────────────────────────────────────── -->
+<div id="report-screen" class="screen hidden">
+  <header class="topbar">
+    <div class="topbar-left">
+      <span class="topbar-icon">📅</span>
+      <div>
+        <h1 class="topbar-title">Rapport de temps</h1>
+        <span id="user-email" class="topbar-sub"></span>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <button id="settings-btn" class="btn btn-secondary">⚙ Paramètres</button>
+      <button id="export-btn"   class="btn btn-secondary">↓ CSV</button>
+      <button id="refresh-btn"  class="btn btn-secondary">↺ Actualiser</button>
+      <button id="sign-out-btn" class="btn btn-link">Déconnexion</button>
+    </div>
+  </header>
+
+  <main id="main-content">
+    <div id="loading" class="loading hidden">
+      <div class="spinner"></div>
+      <span>Chargement des événements…</span>
+    </div>
+    <div id="report-container"></div>
+  </main>
+</div>
+
+<script src="https://apis.google.com/js/api.js" onload="gapiLoaded()" defer></script>
+<script src="https://accounts.google.com/gsi/client" onload="gisLoaded()" defer></script>
+<script src="app.js"></script>
+</body>
+</html>
