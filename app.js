@@ -32,6 +32,7 @@ const getCalendarId = () => store.get('gcal_calendar_id') || 'primary';
 const getApiColors  = () => store.getJSON('gcal_api_colors') || {};
 const getOofLabel   = () => store.get('gcal_oof_label') ?? DEFAULT_OOF_LABEL;
 const getWeeksCount = () => parseInt(store.get('gcal_weeks') || DEFAULT_WEEKS, 10) || DEFAULT_WEEKS;
+const getColorOrder = () => store.getJSON('gcal_color_order') || [];
 const hasColorMap   = () => store.get('gcal_color_map') !== null;
 const getColorMap   = () => {
   const m = store.getJSON('gcal_color_map');
@@ -146,8 +147,10 @@ $('save-color-map-btn').addEventListener('click', () => {
   const weeks = parseInt($('config-weeks-input').value, 10);
   store.set('gcal_weeks', isNaN(weeks) || weeks < 1 ? DEFAULT_WEEKS : weeks);
 
+  const rows = [...document.querySelectorAll('.color-row[data-cid]')];
+  store.setJSON('gcal_color_order', rows.map(r => r.dataset.cid));
   const map = {};
-  document.querySelectorAll('.color-row[data-cid]').forEach(row => {
+  rows.forEach(row => {
     const cid      = row.dataset.cid;
     const label    = row.querySelector('.label-input').value.trim();
     const excluded = row.querySelector('.exclude-check').checked;
@@ -228,9 +231,14 @@ async function loadColorConfig() {
 }
 
 function renderColorConfig(apiColors, usage) {
-  const currentMap = getColorMap();
+  const currentMap  = getColorMap();
+  const savedOrder  = getColorOrder();
 
   const sorted = Object.entries(apiColors).sort(([a], [b]) => {
+    const ia = savedOrder.indexOf(a), ib = savedOrder.indexOf(b);
+    if (ia !== -1 && ib !== -1) return ia - ib;
+    if (ia !== -1) return -1;
+    if (ib !== -1) return 1;
     const diff = (usage[b] || 0) - (usage[a] || 0);
     return diff !== 0 ? diff : Number(a) - Number(b);
   });
@@ -239,7 +247,8 @@ function renderColorConfig(apiColors, usage) {
     const n       = usage[cid] || 0;
     const entry   = currentMap[cid] || { label: '', excluded: false };
     const checked = entry.excluded ? ' checked' : '';
-    return `<div class="color-row" data-cid="${cid}">
+    return `<div class="color-row" data-cid="${cid}" draggable="true">
+      <span class="drag-handle" title="Réordonner">⠿</span>
       <span class="color-swatch" style="background:${background}"></span>
       <div class="color-meta">
         <span class="color-label">Couleur ${cid}</span>
@@ -254,7 +263,42 @@ function renderColorConfig(apiColors, usage) {
     </div>`;
   }).join('');
 
-  $('color-rows-container').innerHTML = rows;
+  const container = $('color-rows-container');
+  container.innerHTML = rows;
+  initDraggable(container);
+}
+
+function initDraggable(container) {
+  let dragSrc = null;
+
+  container.addEventListener('dragstart', e => {
+    dragSrc = e.target.closest('.color-row');
+    if (!dragSrc) return;
+    e.dataTransfer.effectAllowed = 'move';
+    requestAnimationFrame(() => dragSrc.classList.add('dragging'));
+  });
+
+  container.addEventListener('dragend', () => {
+    dragSrc?.classList.remove('dragging');
+    dragSrc = null;
+    container.querySelectorAll('.color-row').forEach(r => r.classList.remove('drag-over'));
+  });
+
+  container.addEventListener('dragover', e => {
+    e.preventDefault();
+    const target = e.target.closest('.color-row');
+    if (!target || target === dragSrc) return;
+    container.querySelectorAll('.color-row').forEach(r => r.classList.remove('drag-over'));
+    target.classList.add('drag-over');
+    const rect  = target.getBoundingClientRect();
+    const after = e.clientY > rect.top + rect.height / 2;
+    container.insertBefore(dragSrc, after ? target.nextSibling : target);
+  });
+
+  container.addEventListener('drop', e => {
+    e.preventDefault();
+    container.querySelectorAll('.color-row').forEach(r => r.classList.remove('drag-over'));
+  });
 }
 
 // ── Calcul de la plage "N semaines complètes" ─────────────────────────────────
@@ -391,6 +435,16 @@ function buildReport(events, from, to) {
 
 // ── Rendu ─────────────────────────────────────────────────────────────────────
 
+function typeOrder(typeName) {
+  const order = getColorOrder();
+  const map   = getColorMap();
+  for (let i = 0; i < order.length; i++) {
+    const entry = map[order[i]];
+    if (entry && entry.label === typeName) return i;
+  }
+  return Infinity;
+}
+
 function colorForType(typeName) {
   const map  = getColorMap();
   const cols = getApiColors();
@@ -448,7 +502,11 @@ function renderWeeks(data) {
     const total = [...types.values()].reduce((s, v) => s + v.hours, 0);
     if (!total) continue;
 
-    const ordered = [...types.entries()].sort((a, b) => b[1].hours - a[1].hours);
+    const ordered = [...types.entries()].sort((a, b) => {
+      const oa = typeOrder(a[0]), ob = typeOrder(b[0]);
+      if (oa !== ob) return oa - ob;
+      return b[1].hours - a[1].hours; // à ordre égal, par heures décroissantes
+    });
 
     const bars = ordered.map(([typeName, { hours, events }]) => {
       const pct = (hours / total * 100).toFixed(1);

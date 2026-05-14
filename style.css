@@ -175,8 +175,22 @@ input[type="number"]:focus {
   gap: 10px;
   padding: 9px 0;
   border-bottom: 1px solid var(--border);
+  transition: opacity .15s;
 }
 .color-row:last-child { border-bottom: none; }
+.color-row.dragging  { opacity: .35; }
+.color-row.drag-over { background: rgba(66,133,244,.06); border-radius: 6px; }
+
+.drag-handle {
+  cursor: grab;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 2px;
+  user-select: none;
+  flex-shrink: 0;
+}
+.drag-handle:active { cursor: grabbing; }
 
 .color-swatch {
   width: 20px; height: 20px;
