@@ -430,6 +430,17 @@ function buildReport(events, from, to) {
     });
   }
 
+  // Ajoute à 0h tous les libellés configurés (non exclus, non vides) absents d'une semaine
+  const allLabels = [...new Set([
+    ...Object.values(colorMap).filter(e => e.label && !e.excluded).map(e => e.label),
+    ...(oofLabel ? [oofLabel] : []),
+  ])];
+  for (const { types } of weeks.values()) {
+    for (const lbl of allLabels) {
+      if (!types.has(lbl)) types.set(lbl, { hours: 0, events: [] });
+    }
+  }
+
   return new Map([...weeks.entries()].sort((a, b) => b[0] - a[0]));
 }
 
