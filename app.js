@@ -1,10 +1,9 @@
 // ── Constantes ────────────────────────────────────────────────────────────────
 
-const SCOPES         = 'https://www.googleapis.com/auth/calendar.readonly';
-const DEFAULT_WEEKS  = 9;
-const WORKING_HOURS  = 7;
+const SCOPES        = 'https://www.googleapis.com/auth/calendar.readonly';
+const DEFAULT_WEEKS = 9;
+const WORKING_HOURS = 7;
 
-// Mapping par défaut (pré-remplit la config à la première ouverture)
 const DEFAULT_COLOR_MAP = {
   '1':  { label: 'Projet Alpha',   excluded: false },
   '3':  { label: 'Projet Bêta',    excluded: false },
@@ -22,7 +21,6 @@ const DEFAULT_OOF_LABEL = 'Autre (à préciser)';
 const store = {
   get:     k     => localStorage.getItem(k),
   set:     (k,v) => localStorage.setItem(k, v),
-  rm:      k     => localStorage.removeItem(k),
   getJSON: k     => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
   setJSON: (k,v) => localStorage.setItem(k, JSON.stringify(v)),
 };
@@ -34,10 +32,7 @@ const getOofLabel   = () => store.get('gcal_oof_label') ?? DEFAULT_OOF_LABEL;
 const getWeeksCount = () => parseInt(store.get('gcal_weeks') || DEFAULT_WEEKS, 10) || DEFAULT_WEEKS;
 const getColorOrder = () => store.getJSON('gcal_color_order') || [];
 const hasColorMap   = () => store.get('gcal_color_map') !== null;
-const getColorMap   = () => {
-  const m = store.getJSON('gcal_color_map');
-  return m !== null ? m : DEFAULT_COLOR_MAP;
-};
+const getColorMap   = () => store.getJSON('gcal_color_map') ?? DEFAULT_COLOR_MAP;
 
 // ── État ─────────────────────────────────────────────────────────────────────
 
@@ -89,32 +84,19 @@ function gisLoaded() {
 
 function checkReady() {
   if (!gapiInited || !gisInited) return;
-  if (!getClientId()) {
-    showScreen('setup');
-    return;
-  }
-  // Tentative de reconnexion silencieuse (sans prompt)
+  if (!getClientId()) { showScreen('setup'); return; }
   showScreen('auth');
-  tokenClient.requestAccessToken({ prompt: '' });
+  tokenClient.requestAccessToken({ prompt: '' }); // tentative silencieuse
 }
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
 function handleTokenResponse(resp) {
-  if (resp.error) {
-    // Reconnexion silencieuse impossible → affiche le bouton de connexion manuelle
-    $('sign-in-btn').disabled = false;
-    return;
-  }
+  if (resp.error) { $('sign-in-btn').disabled = false; return; }
   accessToken = resp.access_token;
   $('user-email').textContent = getCalendarId();
-  if (!hasColorMap()) {
-    showScreen('config');
-    loadColorConfig();
-  } else {
-    showScreen('report');
-    loadReport();
-  }
+  if (!hasColorMap()) { showScreen('config'); loadColorConfig(); }
+  else                { showScreen('report'); loadReport(); }
 }
 
 // ── Écouteurs ─────────────────────────────────────────────────────────────────
@@ -126,17 +108,12 @@ $('save-setup-btn').addEventListener('click', () => {
   window.location.reload();
 });
 
-$('sign-in-btn').addEventListener('click', () => {
-  tokenClient.requestAccessToken({ prompt: 'select_account' });
-});
+$('sign-in-btn').addEventListener('click', () =>
+  tokenClient.requestAccessToken({ prompt: 'select_account' }));
 
 $('reset-config-btn').addEventListener('click', () => {
-  if (accessToken) {
-    showScreen('config');
-    loadColorConfig();
-  } else {
-    showScreen('setup');
-  }
+  if (accessToken) { showScreen('config'); loadColorConfig(); }
+  else             { showScreen('setup'); }
 });
 
 $('save-color-map-btn').addEventListener('click', () => {
@@ -144,17 +121,16 @@ $('save-color-map-btn').addEventListener('click', () => {
   store.set('gcal_calendar_id', calId);
   $('user-email').textContent = calId;
 
-  const weeks = parseInt($('config-weeks-input').value, 10);
-  store.set('gcal_weeks', isNaN(weeks) || weeks < 1 ? DEFAULT_WEEKS : weeks);
+  const w = parseInt($('config-weeks-input').value, 10);
+  store.set('gcal_weeks', isNaN(w) || w < 1 ? DEFAULT_WEEKS : w);
 
   const rows = [...document.querySelectorAll('.color-row[data-cid]')];
   store.setJSON('gcal_color_order', rows.map(r => r.dataset.cid));
   const map = {};
   rows.forEach(row => {
-    const cid      = row.dataset.cid;
     const label    = row.querySelector('.label-input').value.trim();
     const excluded = row.querySelector('.exclude-check').checked;
-    if (label) map[cid] = { label, excluded };
+    if (label) map[row.dataset.cid] = { label, excluded };
   });
   store.setJSON('gcal_color_map', map);
   store.set('gcal_oof_label', $('oof-label-input').value.trim());
@@ -164,14 +140,8 @@ $('save-color-map-btn').addEventListener('click', () => {
 });
 
 $('back-to-report-btn').addEventListener('click', () => showScreen('report'));
-
-$('settings-btn').addEventListener('click', () => {
-  showScreen('config');
-  loadColorConfig();
-});
-
+$('settings-btn').addEventListener('click', () => { showScreen('config'); loadColorConfig(); });
 $('refresh-btn').addEventListener('click', loadReport);
-
 $('export-btn').addEventListener('click', () => { if (lastReport) exportCSV(lastReport); });
 
 $('sign-out-btn').addEventListener('click', () => {
@@ -182,7 +152,38 @@ $('sign-out-btn').addEventListener('click', () => {
   showScreen('auth');
 });
 
-// ── Config : chargement et rendu ──────────────────────────────────────────────
+// ── Délégation de clics ───────────────────────────────────────────────────────
+
+document.addEventListener('click', e => {
+  const copyBtn   = e.target.closest('.copy-week-btn');
+  const detailBtn = e.target.closest('.detail-btn');
+
+  if (copyBtn) {
+    const week = lastReport?.get(Number(copyBtn.dataset.key));
+    if (!week) return;
+    const ordered = sortedTypes(week.types);
+    const total   = sumHours(week.types);
+    const row     = adjustedPcts(ordered, total)
+      .map(p => p.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%')
+      .join('\t');
+    navigator.clipboard.writeText(row).then(() => {
+      copyBtn.textContent = '✓';
+      copyBtn.classList.add('copied');
+      setTimeout(() => { copyBtn.textContent = '⎘'; copyBtn.classList.remove('copied'); }, 1800);
+    });
+  }
+
+  if (detailBtn) {
+    const panel  = document.getElementById('dp_' + detailBtn.dataset.key);
+    if (!panel) return;
+    const isOpen = !panel.classList.contains('hidden');
+    panel.classList.toggle('hidden', isOpen);
+    detailBtn.classList.toggle('open', !isOpen);
+    detailBtn.textContent = isOpen ? '▶' : '▼';
+  }
+});
+
+// ── Config ────────────────────────────────────────────────────────────────────
 
 async function loadColorConfig() {
   $('config-loading').classList.remove('hidden');
@@ -197,33 +198,26 @@ async function loadColorConfig() {
     const [colorsRes, eventsRes, calListRes] = await Promise.all([
       gapi.client.calendar.colors.get(),
       gapi.client.calendar.events.list({
-        calendarId:   getCalendarId(),
-        timeMin:      from.toISOString(),
-        timeMax:      to.toISOString(),
-        singleEvents: true,
-        maxResults:   2500,
-        fields:       'items(colorId)',
+        calendarId: getCalendarId(), singleEvents: true,
+        timeMin: from.toISOString(), timeMax: to.toISOString(),
+        maxResults: 2500, fields: 'items(colorId)',
       }),
       gapi.client.calendar.calendarList.list({ fields: 'items(id,summary)' }),
     ]);
 
-    const datalist = $('calendar-list');
-    datalist.innerHTML = (calListRes.result.items || [])
-      .map(c => `<option value="${esc(c.id)}">${esc(c.summary)}</option>`)
-      .join('');
+    $('calendar-list').innerHTML = (calListRes.result.items || [])
+      .map(c => `<option value="${esc(c.id)}">${esc(c.summary)}</option>`).join('');
 
     const apiColors = colorsRes.result.event || {};
     store.setJSON('gcal_api_colors', apiColors);
 
     const usage = {};
-    for (const ev of (eventsRes.result.items || [])) {
+    for (const ev of (eventsRes.result.items || []))
       if (ev.colorId) usage[ev.colorId] = (usage[ev.colorId] || 0) + 1;
-    }
 
     renderColorConfig(apiColors, usage);
     $('config-loading').classList.add('hidden');
     $('config-form').classList.remove('hidden');
-
   } catch (err) {
     console.error(err);
     $('config-loading').innerHTML = `<p class="msg error">Erreur : ${esc(err.message || err)}</p>`;
@@ -231,45 +225,40 @@ async function loadColorConfig() {
 }
 
 function renderColorConfig(apiColors, usage) {
-  const currentMap  = getColorMap();
-  const savedOrder  = getColorOrder();
+  const currentMap = getColorMap();
+  const savedOrder = getColorOrder();
 
   const sorted = Object.entries(apiColors).sort(([a], [b]) => {
     const ia = savedOrder.indexOf(a), ib = savedOrder.indexOf(b);
     if (ia !== -1 && ib !== -1) return ia - ib;
     if (ia !== -1) return -1;
     if (ib !== -1) return 1;
-    const diff = (usage[b] || 0) - (usage[a] || 0);
-    return diff !== 0 ? diff : Number(a) - Number(b);
+    return (usage[b] || 0) - (usage[a] || 0) || Number(a) - Number(b);
   });
 
-  const rows = sorted.map(([cid, { background }]) => {
-    const n       = usage[cid] || 0;
-    const entry   = currentMap[cid] || { label: '', excluded: false };
-    const checked = entry.excluded ? ' checked' : '';
+  const container = $('color-rows-container');
+  container.innerHTML = sorted.map(([cid, { background }]) => {
+    const n     = usage[cid] || 0;
+    const entry = currentMap[cid] || { label: '', excluded: false };
     return `<div class="color-row" data-cid="${cid}" draggable="true">
       <span class="drag-handle" title="Réordonner">⠿</span>
       <span class="color-swatch" style="background:${background}"></span>
       <div class="color-meta">
         <span class="color-label">Couleur ${cid}</span>
-        <span class="usage-badge${n === 0 ? ' zero' : ''}">${n > 0 ? n + ' évt' : 'non utilisé'}</span>
+        <span class="usage-badge${n ? '' : ' zero'}">${n ? n + ' évt' : 'non utilisé'}</span>
       </div>
-      <input class="label-input" type="text"
-             placeholder="Libellé (vide = ignorer)"
-             value="${esc(entry.label || '')}">
+      <input class="label-input" type="text" placeholder="Libellé (vide = ignorer)" value="${esc(entry.label || '')}">
       <label class="exclude-wrap">
-        <input type="checkbox" class="exclude-check"${checked}> Exclure
+        <input type="checkbox" class="exclude-check"${entry.excluded ? ' checked' : ''}> Exclure
       </label>
     </div>`;
   }).join('');
-
-  const container = $('color-rows-container');
-  container.innerHTML = rows;
   initDraggable(container);
 }
 
 function initDraggable(container) {
   let dragSrc = null;
+  const clearOver = () => container.querySelectorAll('.drag-over').forEach(r => r.classList.remove('drag-over'));
 
   container.addEventListener('dragstart', e => {
     dragSrc = e.target.closest('.color-row');
@@ -277,46 +266,36 @@ function initDraggable(container) {
     e.dataTransfer.effectAllowed = 'move';
     requestAnimationFrame(() => dragSrc.classList.add('dragging'));
   });
-
   container.addEventListener('dragend', () => {
     dragSrc?.classList.remove('dragging');
     dragSrc = null;
-    container.querySelectorAll('.color-row').forEach(r => r.classList.remove('drag-over'));
+    clearOver();
   });
-
   container.addEventListener('dragover', e => {
     e.preventDefault();
     const target = e.target.closest('.color-row');
     if (!target || target === dragSrc) return;
-    container.querySelectorAll('.color-row').forEach(r => r.classList.remove('drag-over'));
+    clearOver();
     target.classList.add('drag-over');
-    const rect  = target.getBoundingClientRect();
-    const after = e.clientY > rect.top + rect.height / 2;
+    const after = e.clientY > target.getBoundingClientRect().top + target.offsetHeight / 2;
     container.insertBefore(dragSrc, after ? target.nextSibling : target);
   });
-
-  container.addEventListener('drop', e => {
-    e.preventDefault();
-    container.querySelectorAll('.color-row').forEach(r => r.classList.remove('drag-over'));
-  });
+  container.addEventListener('drop', e => { e.preventDefault(); clearOver(); });
 }
 
-// ── Calcul de la plage "N semaines complètes" ─────────────────────────────────
+// ── Plage temporelle ──────────────────────────────────────────────────────────
 
 function completeWeeksBounds(n) {
   const now     = new Date();
-  const dow     = now.getDay() || 7;       // 1=lun … 7=dim
   const thisMon = new Date(now);
-  thisMon.setDate(now.getDate() - (dow - 1));
+  thisMon.setDate(now.getDate() - ((now.getDay() || 7) - 1));
   thisMon.setHours(0, 0, 0, 0);
-  const from = new Date(thisMon);
-  from.setDate(thisMon.getDate() - n * 7);
-  const to = new Date(thisMon);
-  to.setDate(thisMon.getDate() + 7);      // lundi suivant → couvre toute la semaine en cours
+  const from = new Date(thisMon); from.setDate(thisMon.getDate() - n * 7);
+  const to   = new Date(thisMon); to.setDate(thisMon.getDate() + 7);
   return { from, to };
 }
 
-// ── Fetch événements ──────────────────────────────────────────────────────────
+// ── Fetch ─────────────────────────────────────────────────────────────────────
 
 async function fetchAllEvents(calendarId, timeMin, timeMax) {
   const events = [];
@@ -324,10 +303,8 @@ async function fetchAllEvents(calendarId, timeMin, timeMax) {
   do {
     const res = await gapi.client.calendar.events.list({
       calendarId, singleEvents: true, orderBy: 'startTime', maxResults: 250,
-      timeMin: timeMin.toISOString(),
-      timeMax: timeMax.toISOString(),
-      eventTypes: ['default', 'outOfOffice'],
-      pageToken,
+      timeMin: timeMin.toISOString(), timeMax: timeMax.toISOString(),
+      eventTypes: ['default', 'outOfOffice'], pageToken,
     });
     events.push(...(res.result.items || []));
     pageToken = res.result.nextPageToken;
@@ -337,16 +314,14 @@ async function fetchAllEvents(calendarId, timeMin, timeMax) {
 
 // ── Traitement ────────────────────────────────────────────────────────────────
 
-function isFullDay(ev) { return !!(ev.start?.date && !ev.start?.dateTime); }
-
-function getDuration(ev) {
+const isFullDay  = ev => !!(ev.start?.date && !ev.start?.dateTime);
+const getDuration = ev => {
   const s = ev.start?.dateTime, e = ev.end?.dateTime;
-  if (!s || !e) return 0;
-  return Math.max(0, (new Date(e) - new Date(s)) / 3_600_000);
-}
+  return s && e ? Math.max(0, (new Date(e) - new Date(s)) / 3_600_000) : 0;
+};
 
 function* workingDays(sd, ed) {
-  const d   = new Date(sd); d.setHours(0, 0, 0, 0);
+  const d = new Date(sd); d.setHours(0, 0, 0, 0);
   const end = new Date(ed); end.setHours(0, 0, 0, 0);
   while (d < end) {
     if (d.getDay() >= 1 && d.getDay() <= 5) yield new Date(d);
@@ -361,20 +336,18 @@ function getWeekInfo(date) {
   const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
   const tmp = new Date(Date.UTC(mon.getFullYear(), mon.getMonth(), mon.getDate()));
   tmp.setUTCDate(tmp.getUTCDate() + 4 - (tmp.getUTCDay() || 7));
-  const ys  = new Date(Date.UTC(tmp.getUTCFullYear(), 0, 1));
-  const wn  = Math.ceil(((tmp - ys) / 86_400_000 + 1) / 7);
-  const p   = n  => String(n).padStart(2, '0');
-  const fd  = dt => `${p(dt.getDate())}/${p(dt.getMonth() + 1)}`;
-  return {
-    sortKey: mon.getTime(),
-    label: `S${p(wn)} · ${fd(mon)}–${fd(sun)}/${sun.getFullYear()}`,
-  };
+  const ys = new Date(Date.UTC(tmp.getUTCFullYear(), 0, 1));
+  const wn = Math.ceil(((tmp - ys) / 86_400_000 + 1) / 7);
+  const p  = n => String(n).padStart(2, '0');
+  const fd = dt => `${p(dt.getDate())}/${p(dt.getMonth() + 1)}`;
+  return { sortKey: mon.getTime(), label: `S${p(wn)} · ${fd(mon)}–${fd(sun)}/${sun.getFullYear()}` };
 }
 
 function buildReport(events, from, to) {
-  const weeks = new Map();
+  const weeks    = new Map();
+  const colorMap = getColorMap();
+  const oofLabel = getOofLabel();
 
-  // weeks: Map< sortKey, { label, types: Map< typeName, { hours, events[] } > } >
   const add = (date, typeName, hours, info) => {
     const { sortKey, label } = getWeekInfo(date);
     if (!weeks.has(sortKey)) weeks.set(sortKey, { label, types: new Map() });
@@ -385,125 +358,100 @@ function buildReport(events, from, to) {
     entry.events.push(info);
   };
 
-  const colorMap = getColorMap();
-  const oofLabel = getOofLabel();
-
   for (const ev of events) {
-
-    // Absence outOfOffice → 7h par jour ouvré dans le libellé OOF configuré
     if (ev.eventType === 'outOfOffice') {
       if (!oofLabel) continue;
       const sd = ev.start?.dateTime ? new Date(ev.start.dateTime) : new Date(ev.start.date + 'T00:00:00');
       const ed = ev.end?.dateTime   ? new Date(ev.end.dateTime)   : new Date(ev.end.date   + 'T00:00:00');
-      for (const d of workingDays(sd, ed)) {
+      for (const d of workingDays(sd, ed))
         if (d >= from && d < to)
-          add(d, oofLabel, WORKING_HOURS, {
-            summary: ev.summary || 'Absence',
-            date: new Date(d),
-            hours: WORKING_HOURS,
-            isOof: true,
-          });
-      }
+          add(d, oofLabel, WORKING_HOURS, { summary: ev.summary || 'Absence', date: new Date(d), hours: WORKING_HOURS, isOof: true });
       continue;
     }
 
-    // Journée entière non-OOF → ignorée
     if (isFullDay(ev)) continue;
-
-    // Événement chronométré
-    const cid   = ev.colorId;
-    if (!cid) continue;
-    const entry = colorMap[cid];
-    if (!entry || !entry.label || entry.excluded) continue;
+    const entry = colorMap[ev.colorId];
+    if (!entry?.label || entry.excluded) continue;
 
     const hours = getDuration(ev);
     if (hours <= 0) continue;
-
     const start = ev.start?.dateTime ? new Date(ev.start.dateTime) : null;
     if (!start || start < from || start >= to) continue;
 
-    add(start, entry.label, hours, {
-      summary: ev.summary || '(sans titre)',
-      date: start,
-      hours,
-      isOof: false,
-    });
+    add(start, entry.label, hours, { summary: ev.summary || '(sans titre)', date: start, hours, isOof: false });
   }
 
-  // Ajoute à 0h tous les libellés configurés (non exclus, non vides) absents d'une semaine
+  // Complète chaque semaine avec les libellés configurés à 0h
   const allLabels = [...new Set([
     ...Object.values(colorMap).filter(e => e.label && !e.excluded).map(e => e.label),
     ...(oofLabel ? [oofLabel] : []),
   ])];
-  for (const { types } of weeks.values()) {
-    for (const lbl of allLabels) {
+  for (const { types } of weeks.values())
+    for (const lbl of allLabels)
       if (!types.has(lbl)) types.set(lbl, { hours: 0, events: [] });
-    }
-  }
 
   return new Map([...weeks.entries()].sort((a, b) => b[0] - a[0]));
 }
 
-// ── Rendu ─────────────────────────────────────────────────────────────────────
+// ── Helpers de rendu ──────────────────────────────────────────────────────────
+
+const sumHours    = types => [...types.values()].reduce((s, v) => s + v.hours, 0);
+const sortedTypes = types => [...types.entries()].sort((a, b) => {
+  const oa = typeOrder(a[0]), ob = typeOrder(b[0]);
+  return oa !== ob ? oa - ob : b[1].hours - a[1].hours;
+});
 
 function typeOrder(typeName) {
-  const order = getColorOrder();
-  const map   = getColorMap();
-  for (let i = 0; i < order.length; i++) {
-    const entry = map[order[i]];
-    if (entry && entry.label === typeName) return i;
-  }
-  return Infinity;
+  const order = getColorOrder(), map = getColorMap();
+  const idx = order.findIndex(cid => map[cid]?.label === typeName);
+  return idx !== -1 ? idx : Infinity;
 }
 
 function colorForType(typeName) {
-  const map  = getColorMap();
-  const cols = getApiColors();
-  for (const [cid, entry] of Object.entries(map)) {
-    if (entry.label === typeName && cols[cid]) return cols[cid].background;
-  }
-  return '#aaa';
+  const map = getColorMap(), cols = getApiColors();
+  const cid = Object.keys(map).find(k => map[k].label === typeName);
+  return cid && cols[cid] ? cols[cid].background : '#aaa';
 }
 
-// Retourne les pourcentages arrondis à 2 décimales en ajustant le label OOF
-// (ou le plus grand) pour que la somme soit exactement 100,00.
+// Pourcentages arrondis à 2 décimales, ajustés sur le label OOF pour sommer à 100,00.
 function adjustedPcts(ordered, total) {
   if (!total) return ordered.map(() => 0);
   const pcts = ordered.map(([, { hours }]) => Math.round(hours / total * 10000) / 100);
-  const diff  = Math.round((100 - pcts.reduce((a, b) => a + b, 0)) * 100) / 100;
+  const diff = Math.round((100 - pcts.reduce((a, b) => a + b, 0)) * 100) / 100;
   if (diff !== 0) {
-    const oofLabel = getOofLabel();
-    let idx = ordered.findIndex(([name]) => name === oofLabel);
+    let idx = ordered.findIndex(([name]) => name === getOofLabel());
     if (idx === -1) idx = pcts.reduce((mi, v, i, a) => v > a[mi] ? i : mi, 0);
     pcts[idx] = Math.round((pcts[idx] + diff) * 100) / 100;
   }
   return pcts;
 }
 
-function formatHours(h) {
-  const total = Math.round(h * 60);
-  const hrs   = Math.floor(total / 60);
-  const mins  = total % 60;
-  if (hrs === 0) return `${mins}min`;
-  if (mins === 0) return `${hrs}h`;
-  return `${hrs}h ${mins}min`;
+const formatHours = h => {
+  const t = Math.round(h * 60), hrs = Math.floor(t / 60), mins = t % 60;
+  return hrs === 0 ? `${mins}min` : mins === 0 ? `${hrs}h` : `${hrs}h ${mins}min`;
+};
+
+const esc = s => String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+const fmtDD_MM = d => `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`;
+
+function groupEvents(events) {
+  const map = new Map();
+  for (const e of events.slice().sort((a, b) => new Date(a.date) - new Date(b.date))) {
+    if (!map.has(e.summary)) map.set(e.summary, { ...e, count: 1 });
+    else { const g = map.get(e.summary); g.hours += e.hours; g.count++; }
+  }
+  return [...map.values()];
 }
 
-function esc(s) {
-  return String(s)
-    .replace(/&/g,'&amp;')
-    .replace(/"/g,'&quot;')
-    .replace(/</g,'&lt;')
-    .replace(/>/g,'&gt;');
-}
+// ── Rendu ─────────────────────────────────────────────────────────────────────
 
 function renderSummary(data) {
   const totals = new Map();
-  for (const { types } of data.values()) {
-    for (const [t, { hours }] of types) {
+  for (const { types } of data.values())
+    for (const [t, { hours }] of types)
       totals.set(t, (totals.get(t) || 0) + hours);
-    }
-  }
+
   const grand = [...totals.values()].reduce((a, b) => a + b, 0);
   if (!grand) return '';
 
@@ -525,37 +473,19 @@ function renderSummary(data) {
 function renderWeeks(data) {
   let html = '';
   for (const [sortKey, { label, types }] of data) {
-    const total = [...types.values()].reduce((s, v) => s + v.hours, 0);
+    const total   = sumHours(types);
     if (!total) continue;
+    const ordered = sortedTypes(types);
+    const pcts    = adjustedPcts(ordered, total);
+    const wn      = label.match(/^S(\d+)/)?.[1] ?? '';
 
-    const ordered = [...types.entries()].sort((a, b) => {
-      const oa = typeOrder(a[0]), ob = typeOrder(b[0]);
-      if (oa !== ob) return oa - ob;
-      return b[1].hours - a[1].hours; // à ordre égal, par heures décroissantes
-    });
-
-    const pcts = adjustedPcts(ordered, total);
     const bars = ordered.map(([typeName, { hours, events }], i) => {
       const pct = pcts[i].toFixed(2);
       const col = colorForType(typeName);
-      const key = `${sortKey}_${typeName.replace(/\W+/g,'_')}`;
+      const key = `${sortKey}_${typeName.replace(/\W+/g, '_')}`;
 
-      // Regroupe les événements identiques (même titre)
-      const grouped = new Map();
-      for (const e of events.slice().sort((a, b) => new Date(a.date) - new Date(b.date))) {
-        if (!grouped.has(e.summary)) {
-          grouped.set(e.summary, { ...e, count: 1 });
-        } else {
-          const g = grouped.get(e.summary);
-          g.hours += e.hours;
-          g.count++;
-        }
-      }
-
-      const evRows = [...grouped.values()].map(e => {
-        const d   = new Date(e.date);
-        const fmt = `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`;
-        const dateCell = e.count > 1 ? `<span class="ev-count">×${e.count}</span>` : fmt;
+      const evRows = groupEvents(events).map(e => {
+        const dateCell = e.count > 1 ? `<span class="ev-count">×${e.count}</span>` : fmtDD_MM(new Date(e.date));
         const title    = e.isOof ? `<em>${esc(e.summary)}</em>` : esc(e.summary);
         return `<div class="detail-row">
           <span class="detail-date">${dateCell}</span>
@@ -566,27 +496,19 @@ function renderWeeks(data) {
 
       return `<div class="bar-group">
         <div class="bar-row">
-          <div class="type-name">
-            <span class="dot" style="background:${col}"></span>
-            <span>${esc(typeName)}</span>
-          </div>
-          <div class="bar-track">
-            <div class="bar-fill" style="background:${col}" data-pct="${pct}"></div>
-          </div>
+          <div class="type-name"><span class="dot" style="background:${col}"></span><span>${esc(typeName)}</span></div>
+          <div class="bar-track"><div class="bar-fill" style="background:${col}" data-pct="${pct}"></div></div>
           <span class="bar-pct">${pct}%</span>
           <span class="bar-hours">${hours.toFixed(1)}h</span>
           <button class="detail-btn" data-key="${key}" title="Voir le détail">▶</button>
         </div>
         <div class="detail-panel hidden" id="dp_${key}">
-          <div class="detail-header">
-            <span>Date</span><span>Événement</span><span style="text-align:right">Durée</span>
-          </div>
+          <div class="detail-header"><span>Date</span><span>Événement</span><span style="text-align:right">Durée</span></div>
           ${evRows || '<div class="detail-row"><span></span><span style="color:var(--muted)">Aucun événement</span><span></span></div>'}
         </div>
       </div>`;
     }).join('');
 
-    const wn = label.match(/^S(\d+)/)?.[1] ?? '';
     html += `<div class="card week-card">
       <div class="week-header">
         <span class="week-label">${label}</span>
@@ -601,44 +523,6 @@ function renderWeeks(data) {
   return html || '<p class="msg">Aucun événement comptabilisé sur la période.</p>';
 }
 
-// Délégation pour le bouton copier semaine
-document.addEventListener('click', e => {
-  const btn = e.target.closest('.copy-week-btn');
-  if (!btn) return;
-  const week = lastReport?.get(Number(btn.dataset.key));
-  if (!week) return;
-
-  const ordered = [...week.types.entries()].sort((a, b) => {
-    const oa = typeOrder(a[0]), ob = typeOrder(b[0]);
-    return oa !== ob ? oa - ob : b[1].hours - a[1].hours;
-  });
-  const total = [...week.types.values()].reduce((s, v) => s + v.hours, 0);
-  const pcts  = adjustedPcts(ordered, total);
-
-  const row = pcts.map(p =>
-    p.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'
-  ).join('\t');
-
-  navigator.clipboard.writeText(row).then(() => {
-    btn.textContent = '✓';
-    btn.classList.add('copied');
-    setTimeout(() => { btn.textContent = '⎘'; btn.classList.remove('copied'); }, 1800);
-  });
-});
-
-// Délégation unique pour les boutons "▶" (évite les onclick inline)
-document.addEventListener('click', e => {
-  const btn = e.target.closest('.detail-btn');
-  if (!btn) return;
-  const key   = btn.dataset.key;
-  const panel = document.getElementById('dp_' + key);
-  if (!panel) return;
-  const isOpen = !panel.classList.contains('hidden');
-  panel.classList.toggle('hidden', isOpen);
-  btn.classList.toggle('open', !isOpen);
-  btn.textContent = isOpen ? '▶' : '▼';
-});
-
 function animateBars() {
   requestAnimationFrame(() => {
     document.querySelectorAll('.bar-fill[data-pct]').forEach(el => {
@@ -651,55 +535,47 @@ function animateBars() {
 // ── Export CSV ────────────────────────────────────────────────────────────────
 
 function exportCSV(data) {
-  const rows = [['Semaine','Type','Heures','Pourcentage']];
+  const rows = [['Semaine', 'Type', 'Heures', 'Pourcentage']];
   for (const [, { label, types }] of data) {
-    const total = [...types.values()].reduce((s, v) => s + v.hours, 0);
+    const total   = sumHours(types);
     if (!total) continue;
-    const csvOrdered = [...types.entries()].sort((a, b) => {
-      const oa = typeOrder(a[0]), ob = typeOrder(b[0]);
-      return oa !== ob ? oa - ob : b[1].hours - a[1].hours;
-    });
-    const csvPcts = adjustedPcts(csvOrdered, total);
-    csvOrdered.forEach(([t, { hours }], i) => {
-      rows.push([label, t, hours.toFixed(2), csvPcts[i].toFixed(2)]);
+    const ordered = sortedTypes(types);
+    adjustedPcts(ordered, total).forEach((pct, i) => {
+      const [t, { hours }] = ordered[i];
+      rows.push([label, t, hours.toFixed(2), pct.toFixed(2)]);
     });
   }
   const csv  = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n');
   const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
-  const a    = Object.assign(document.createElement('a'), {
+  Object.assign(document.createElement('a'), {
     href: URL.createObjectURL(blob),
-    download: `rapport-${new Date().toISOString().slice(0,10)}.csv`,
-  });
-  a.click();
+    download: `rapport-${new Date().toISOString().slice(0, 10)}.csv`,
+  }).click();
 }
 
 // ── Chargement du rapport ─────────────────────────────────────────────────────
 
 async function loadReport() {
-  const loading   = $('loading');
   const container = $('report-container');
-  loading.classList.remove('hidden');
+  $('loading').classList.remove('hidden');
   container.innerHTML = '';
 
   try {
     const { from, to } = completeWeeksBounds(getWeeksCount());
-
     const events = await fetchAllEvents(getCalendarId(), from, to);
-    const data   = buildReport(events, from, to);
-    lastReport   = data;
+    lastReport   = buildReport(events, from, to);
 
-    const fmt = d => d.toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit', year:'numeric' });
+    const fmt = d => d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
     container.innerHTML =
       `<p class="period-info"><strong>${fmt(from)}</strong> → <strong>${fmt(to)}</strong> · ${events.length} événements récupérés</p>` +
-      renderSummary(data) +
-      renderWeeks(data);
-
+      renderSummary(lastReport) +
+      renderWeeks(lastReport);
     animateBars();
   } catch (err) {
     console.error(err);
     container.innerHTML = `<p class="msg error">Erreur : ${esc(err.message || err)}</p>`;
   } finally {
-    loading.classList.add('hidden');
+    $('loading').classList.add('hidden');
   }
 }
 
