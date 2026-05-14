@@ -465,6 +465,21 @@ function colorForType(typeName) {
   return '#aaa';
 }
 
+// Retourne les pourcentages arrondis à 2 décimales en ajustant le label OOF
+// (ou le plus grand) pour que la somme soit exactement 100,00.
+function adjustedPcts(ordered, total) {
+  if (!total) return ordered.map(() => 0);
+  const pcts = ordered.map(([, { hours }]) => Math.round(hours / total * 10000) / 100);
+  const diff  = Math.round((100 - pcts.reduce((a, b) => a + b, 0)) * 100) / 100;
+  if (diff !== 0) {
+    const oofLabel = getOofLabel();
+    let idx = ordered.findIndex(([name]) => name === oofLabel);
+    if (idx === -1) idx = pcts.reduce((mi, v, i, a) => v > a[mi] ? i : mi, 0);
+    pcts[idx] = Math.round((pcts[idx] + diff) * 100) / 100;
+  }
+  return pcts;
+}
+
 function formatHours(h) {
   const total = Math.round(h * 60);
   const hrs   = Math.floor(total / 60);
@@ -519,8 +534,9 @@ function renderWeeks(data) {
       return b[1].hours - a[1].hours; // à ordre égal, par heures décroissantes
     });
 
-    const bars = ordered.map(([typeName, { hours, events }]) => {
-      const pct = (hours / total * 100).toFixed(1);
+    const pcts = adjustedPcts(ordered, total);
+    const bars = ordered.map(([typeName, { hours, events }], i) => {
+      const pct = pcts[i].toFixed(2);
       const col = colorForType(typeName);
       const key = `${sortKey}_${typeName.replace(/\W+/g,'_')}`;
 
@@ -597,11 +613,11 @@ document.addEventListener('click', e => {
     return oa !== ob ? oa - ob : b[1].hours - a[1].hours;
   });
   const total = [...week.types.values()].reduce((s, v) => s + v.hours, 0);
+  const pcts  = adjustedPcts(ordered, total);
 
-  const row = ordered.map(([, { hours }]) => {
-    const pct = total > 0 ? hours / total * 100 : 0;
-    return pct.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%';
-  }).join('\t');
+  const row = pcts.map(p =>
+    p.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'
+  ).join('\t');
 
   navigator.clipboard.writeText(row).then(() => {
     btn.textContent = '✓';
@@ -639,9 +655,14 @@ function exportCSV(data) {
   for (const [, { label, types }] of data) {
     const total = [...types.values()].reduce((s, v) => s + v.hours, 0);
     if (!total) continue;
-    for (const [t, { hours }] of [...types.entries()].sort((a,b) => b[1].hours - a[1].hours)) {
-      rows.push([label, t, hours.toFixed(2), (hours / total * 100).toFixed(2)]);
-    }
+    const csvOrdered = [...types.entries()].sort((a, b) => {
+      const oa = typeOrder(a[0]), ob = typeOrder(b[0]);
+      return oa !== ob ? oa - ob : b[1].hours - a[1].hours;
+    });
+    const csvPcts = adjustedPcts(csvOrdered, total);
+    csvOrdered.forEach(([t, { hours }], i) => {
+      rows.push([label, t, hours.toFixed(2), csvPcts[i].toFixed(2)]);
+    });
   }
   const csv  = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n');
   const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
