@@ -6,14 +6,14 @@ const WORKING_HOURS  = 7;
 
 // Mapping par défaut (pré-remplit la config à la première ouverture)
 const DEFAULT_COLOR_MAP = {
-  '1':  { label: 'KaraFun Business',   excluded: false },
-  '3':  { label: 'VK',                 excluded: false },
-  '5':  { label: 'Perso',              excluded: true  },
-  '7':  { label: 'KaraFun Retail',     excluded: false },
-  '8':  { label: 'All Products',       excluded: false },
-  '9':  { label: 'KaraFun Standard',   excluded: false },
-  '10': { label: 'Autre (à préciser)', excluded: false },
-  '11': { label: 'Jamzone',            excluded: false },
+  '1':  { label: 'Projet Alpha',   excluded: false },
+  '3':  { label: 'Projet Bêta',    excluded: false },
+  '5':  { label: 'Perso',          excluded: true  },
+  '7':  { label: 'Projet Gamma',   excluded: false },
+  '8':  { label: 'Projet Delta',   excluded: false },
+  '9':  { label: 'Projet Epsilon', excluded: false },
+  '10': { label: 'Autre',          excluded: false },
+  '11': { label: 'Projet Zêta',    excluded: false },
 };
 const DEFAULT_OOF_LABEL = 'Autre (à préciser)';
 
