@@ -570,16 +570,45 @@ function renderWeeks(data) {
       </div>`;
     }).join('');
 
+    const wn = label.match(/^S(\d+)/)?.[1] ?? '';
     html += `<div class="card week-card">
       <div class="week-header">
         <span class="week-label">${label}</span>
-        <span class="week-total">${total.toFixed(1)}h</span>
+        <div class="week-header-right">
+          <span class="week-total">${total.toFixed(1)}h</span>
+          <button class="copy-week-btn" data-key="${sortKey}" title="Copier la ligne pour tableur (Semaine ${wn})">⎘</button>
+        </div>
       </div>
       <div class="week-bars">${bars}</div>
     </div>`;
   }
   return html || '<p class="msg">Aucun événement comptabilisé sur la période.</p>';
 }
+
+// Délégation pour le bouton copier semaine
+document.addEventListener('click', e => {
+  const btn = e.target.closest('.copy-week-btn');
+  if (!btn) return;
+  const week = lastReport?.get(Number(btn.dataset.key));
+  if (!week) return;
+
+  const ordered = [...week.types.entries()].sort((a, b) => {
+    const oa = typeOrder(a[0]), ob = typeOrder(b[0]);
+    return oa !== ob ? oa - ob : b[1].hours - a[1].hours;
+  });
+  const total = [...week.types.values()].reduce((s, v) => s + v.hours, 0);
+
+  const row = ordered.map(([, { hours }]) => {
+    const pct = total > 0 ? hours / total * 100 : 0;
+    return pct.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%';
+  }).join('\t');
+
+  navigator.clipboard.writeText(row).then(() => {
+    btn.textContent = '✓';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = '⎘'; btn.classList.remove('copied'); }, 1800);
+  });
+});
 
 // Délégation unique pour les boutons "▶" (évite les onclick inline)
 document.addEventListener('click', e => {

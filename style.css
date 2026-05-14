@@ -305,7 +305,19 @@ input[type="number"]:focus {
   font-weight: 600; font-size: 14px;
   font-family: 'SF Mono', 'Fira Code', monospace; letter-spacing: -.01em;
 }
+.week-header-right { display: flex; align-items: center; gap: 8px; }
 .week-total { font-size: 13px; font-weight: 600; color: var(--muted); }
+
+.copy-week-btn {
+  background: none; border: 1px solid var(--border); cursor: pointer;
+  font-size: 13px; color: var(--muted);
+  width: 26px; height: 26px; border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .15s, color .15s, border-color .15s;
+  padding: 0; flex-shrink: 0;
+}
+.copy-week-btn:hover { background: #f0f0f0; color: var(--text); }
+.copy-week-btn.copied { background: #dcfce7; color: #16a34a; border-color: #86efac; }
 
 .week-bars { padding: 8px 20px 14px; }
 
